@@ -1,0 +1,784 @@
+---
+title: "101_wk4_Data_Vis_Basic"
+author: "Seung Hyun Sung"
+date: "11/8/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+# ANATOMY OF A GGPLOT2 OBJECT ----
+
+
+## 1A Framing ggplot 
+Think of ggplots like building layers of a cake. Each layer is added on top.
+
+[1] Create a canvas defined by mapping to columns in your data 
+
+[2] Add 1 or more geometrics (geoms)
+
+[3] Add formatting features. {Scales, Themes, Facets, etc}
+
+Geom/Geometries: These define how your data looks on your plot 
+
+* Stands for geometrics
+* Geometrics are the funcdermental way to represent data in your plot
+* Determines Plot Type:
+ + Histograms
+ + Scatter Plots
+ + Box Plots
+ + Bar/Column Plots
+ + More and more 
+
+Formatting: These add customization to your plot to control wide-range of appearence options. 
+Scales, Faceting, Position Adjustments, Labels, Legends, Themes are commonly customerized. 
+
+
+```{r, include =FALSE}
+library(tidyverse)
+library(lubridate)
+library(tidyquant)
+```
+
+
+>_Enables Customization on Steroids
+ggplot2 is super flexible giving tons of options. The downside in this flexibility is that it takes a while to learn._ _Matt Dancho_
+----
+
+>_For business reports the it is important to get the themes right and reported with same formated theme._ __ _Matt Dancho_
+
+>_The key to a good ggplot is knowing how to format the data for a ggplot._ 
+
+
+```{r, include =FALSE}
+bike_orderlines_tbl <- read_rds("00_data/bike_sales/data_wrangled/bike_orderlines.rds")
+
+glimpse(bike_orderlines_tbl)
+```
+
+
+## 1B How ggplot works ----
+
+### Step 1: Format data ----
+
+unlike base graphics, ggplot works with data.frames and not individual vectors. 
+
+    
+```{r}
+
+revenue_by_year_tbl <- bike_orderlines_tbl %>%
+    select(order_date, total_price) %>%
+    mutate(year = year(order_date)) %>%
+    
+    group_by(year) %>%
+    summarize(revenue = sum(total_price)) %>%
+    ungroup()
+
+
+revenue_by_year_tbl
+
+```
+
+
+### Step 2: Plot ----
+
+Mapping: Connects data columns to ggplot aesthetics 
+
+GGplot structure 
+
++ Step 1: Build Canvas: Involves mapping __columns__ in data to ggplot() __aesthetics__ (x, y, color, fill, size etc) via aes() function 
+
++ Step 2: Geometries: 2nd Layer that generates a visual depiction of the data using a geometry type (e.g. Line Plot)
+
+```{r}
+revenue_by_year_tbl %>%
+    # Canvas
+    ggplot(aes(x = year, y = revenue, color = revenue)) +
+    
+    # Geometries 
+    geom_line(size = 1) +
+    # aesthetics specifically targeting certain geometries 
+    geom_point(aes(size = revenue))
+```
+
+
++ Scale Color: Enables customizing the color aesthetic (mapped to revenue in this case)
+
++ Scale X & Y: Enables customizing the x-axis and y-axis (mapped to year and revenue in this case)
+
++ Labels: Changes the __text__ for title, subtitle, x, y, legends & captions 
+
++ Themes: Usually we start with a base theme e.g. theme_bw() and then modify with the theme() function  
+
+```{r}
+g <- revenue_by_year_tbl %>%
+    # Canvas
+    ggplot(aes(x = year, y = revenue, color = revenue)) +
+    
+    # Geometries 
+    geom_line(size = 1) +
+    geom_point(size = 5) +
+    geom_smooth(method = "lm", se = FALSE) +
+    
+    # Formatting
+    expand_limits(y = 0) +
+    scale_color_continuous(low = "red", high = "black",
+                           labels = scales::dollar_format(scale = 1/1e6, suffix = "M")) +
+    scale_y_continuous(labels = scales::dollar_format(scale = 1/1e6, suffix = "M")) +
+    labs(
+        title = "Revenue",
+        subtitle = "Sales are trending up and to the right!",
+        x = "",
+        y = "Sales (Millions)",
+        color = "Rev ($M)",
+        caption = "What's happening?\nSales numbers showing year-over-year growth."
+    ) +
+    theme_bw() +
+    theme(legend.position = "right", legend.direction = "vertical")
+```
+
+## 1C What is a ggplot? ----
+
+Key Concept: The ggplot object is just a list that captures layers, scales, 
+mappings, theme, coordinates, and labels that you customize
+
+```{r}
+g
+
+```
+
+
+# Types of Graphs: ggplot2 Geometries 
+
+```{r}
+bike_orderlines_tbl <- read_rds("00_data/bike_sales/data_wrangled/bike_orderlines.rds")
+
+glimpse(bike_orderlines_tbl)
+```
+
+
+## 2A Point / Scatter Plots (geom_point)
+
+* Great for Continuous vs Continuous
+
+* Also good for Lollipop Charts (more on this in advanced plots)
+
+Goal: Explain relationship between order value and quantity of bikes sold
+
+```{r}
+# Data Manipulation
+order_value_tbl <- bike_orderlines_tbl %>% 
+    select(order_id, order_line, total_price, quantity) %>% 
+    group_by(order_id) %>% 
+    summarise(
+        total_quantity = sum(quantity),
+        total_price    = sum(total_price)
+    ) %>% 
+    ungroup()
+    
+    
+# Scatter Plot
+order_value_tbl %>% 
+    ggplot(aes(x = total_quantity, y = total_price)) +
+    # geometries
+    geom_point(alpha = 0.5, size = 2) +
+    # uses spine (default) y ~ s(x, bs = "cs")
+    # change method to 'lm'
+    geom_smooth(method = 'lm', se = FALSE)
+```
+
+
+
+## 2B Line Plots ----
+
+* Great for time series
+
+* Goal: Describe revenue by Month, expose cyclic nature
+
+```{r}
+# Data Manipulation
+revenue_by_month_tbl <- bike_orderlines_tbl %>% 
+    select(order_date, total_price) %>% 
+    mutate(year_month = floor_date(order_date, "months") %>% ymd()) %>% 
+    group_by(year_month) %>% 
+    summarise(revenue = sum(total_price)) %>% 
+    ungroup()
+    
+    
+
+# Line Plot
+revenue_by_month_tbl %>% 
+    ggplot(aes(x = year_month, y = revenue)) + 
+    geom_line(size = 0.5, linetype = 1) +
+    geom_smooth(method = 'loess', span = 0.2)
+
+```
+
+## 2C Bar / Column Plots ----
+
+* - Great for categories
+
+* Goal: Sales by Descriptive Category
+
+```{r}
+# Data Manipulation
+revenue_by_category_2 <- bike_orderlines_tbl %>% 
+    select(category_2, total_price) %>% 
+    group_by(category_2) %>% 
+    summarise(revenue = sum(total_price)) %>% 
+    ungroup()
+
+
+# Bar Plot
+revenue_by_category_2 %>% 
+    mutate(category_2 = category_2 %>% fct_reorder(revenue)) %>% 
+    ggplot(aes(x = category_2, y = revenue)) +
+    geom_col(fill = palette_dark()[6]) +
+    coord_flip()
+```
+
+***
+#### R - difference between geom_bar() and geom_col() in ggplot2
+
+* There are two types of bar charts: geom_bar() and geom_col(). 
+
+* geom_bar() makes the height of the bar proportional to the number of cases in each group (or if the weight aesthetic is supplied, the sum of the weights). If you want the heights of the bars to represent values in the data, use geom_col() instead
+geom_bar() uses stat_count() by default: it counts the number of cases at each
+x position
+
+* summary:
+    + geom_bar : represents stats (number of cases in each group)
+    + geom_bar : represents value
+
+
+## 2D Histogram / Density Plots ----
+
+* Great for inspecting the distribution of a variable
+
+
+* Goal: Unit price of bicycles
+
+
+```{r}
+# Histogram
+bike_orderlines_tbl %>% 
+    distinct(model, price) %>% 
+    ggplot(aes(price)) +
+    geom_histogram(bins = 20, color = "white", fill = "blue", alpha = 0.5) 
+
+# Goal: Unit price of bicylce, segmenting by frame material
+
+# Histogram
+bike_orderlines_tbl %>% 
+    distinct(model, price, frame_material) %>% 
+    ggplot(aes(price, fill = frame_material)) +
+    geom_histogram() +
+    facet_wrap(~frame_material, ncol = 1) +
+    scale_fill_tq() +
+    theme_tq()
+
+# Density
+bike_orderlines_tbl %>% 
+    distinct(model, price, frame_material) %>% 
+    ggplot(aes(price, fill = frame_material)) +
+    geom_density(alpha = 0.5) +
+    scale_fill_tq() +
+    theme_tq()
+
+```
+
+
+
+
+##  2E Box Plot / Violin Plot ----
+
+* Great for comparing distributions
+
+* Goal: Unit price of models, segmenting by category 2
+
+```{r}
+# Data Manipulation
+unit_price_by_cat_2_tbl <- bike_orderlines_tbl %>% 
+    select(category_2, model, price) %>% 
+    distinct() %>% 
+    mutate(category_2 = as_factor(category_2) %>% fct_reorder(price))
+
+# Box Plot
+unit_price_by_cat_2_tbl %>% 
+    ggplot(aes(category_2, price)) +
+    geom_boxplot() +
+    coord_flip() +
+    theme_tq()
+```
+
+
+
+#  2F Violin Plot & Jitter Plot
+
+* It adds a small amount of random variation to the location of each point, and is a useful way of handling overplotting caused by discreteness in smaller datasets.
+
+```{r}
+unit_price_by_cat_2_tbl %>% 
+    ggplot(aes(category_2, price)) +
+    geom_jitter(width = 0.1, color = "#2c3e50") +
+    geom_violin(alpha = 0.5) +
+    coord_flip() +
+    theme_tq()
+```
+
+
+
+# 2G Adding Text & Labels ----
+
+* Goal: Exposing sales over time, highlighting outlier
+
+```{r}
+# Data Manipulation
+revenue_by_year_tbl <- bike_orderlines_tbl %>% 
+    select(order_date, total_price) %>% 
+    mutate(year = year(order_date)) %>% 
+    group_by(year) %>% 
+    summarise(revenue = sum(total_price)) %>% 
+    ungroup()
+```
+
+
+#### Adding text to bar chart
+```{r}
+revenue_by_year_tbl %>% 
+    ggplot(aes(x = year, y = revenue)) +
+    geom_col(fill="#2c3e50") +
+    geom_text(aes(label = scales::dollar(revenue, scale = 1e-6, suffix = "M")), vjust = 1.5, color = "white") 
+
+revenue_by_year_tbl %>% 
+    mutate(revenue_text = scales::dollar(revenue, scale = 1e-6, suffix = "M")) %>% 
+    ggplot(aes(x = year, y = revenue)) +
+    geom_col(fill="#2c3e50") +
+    geom_text(aes(label = revenue_text), vjust = 1.5, color = "white") +
+    expand_limits(y = 2e7) +
+    theme_tq()
+```
+
+
+```{r}
+revenue_by_year_tbl %>% 
+    mutate(revenue_text = scales::dollar(revenue, scale = 1e-6, suffix = "M")) %>% 
+    ggplot(aes(x = year, y = revenue)) +
+    geom_col(fill="#2c3e50") +
+    geom_label(aes(label = revenue_text), vjust = 0.6, size = 5) +
+    expand_limits(y = 2e7) +
+    theme_tq()
+
+revenue_by_year_tbl %>% 
+    mutate(revenue_text = scales::dollar(revenue, scale = 1e-6, suffix = "M")) %>% 
+    ggplot(aes(x = year, y = revenue)) +
+    geom_col(fill="#2c3e50") +
+    geom_label(aes(label = revenue_text), vjust = 0.05, size = 5) +
+    expand_limits(y = 2e7) +
+    theme_tq()
+```
+
+
+#### Filtering labels to highlight a point
+```{r}
+revenue_by_year_tbl %>% 
+    mutate(revenue_text = scales::dollar(revenue, scale = 1e-6, suffix = "M")) %>% 
+    ggplot(aes(x = year, y = revenue)) +
+    geom_col(fill="#2c3e50") +
+    geom_smooth(method = "lm", se = FALSE) +
+    geom_text(aes(label = revenue_text), vjust = 1.5, color = "white") +
+    geom_label(label = "Major Demand This Year",
+               vjust = -0.5,
+               size = 5, 
+               fontface = "bold",
+               fill = palette_light()[4],
+               data = revenue_by_year_tbl %>% 
+                   filter(year %in% c(2013))) +
+    expand_limits(y = 2e7) +
+    theme_tq()
+```
+
+
+# 3.0 ggplot2 Formatting 
+
+
+# 3A. Data Manipulation
+
+fct_reorder  : reorder by one axis (e.g. revenue)
+
+fct_reorder2 : reorder by two axis (e.g. year, revenue)
+
+
+```{r, message=FALSE}
+sales_by_year_category_2_tbl <- bike_orderlines_tbl %>%
+    select(order_date, category_2, total_price) %>%
+    
+    mutate(order_date = ymd(order_date)) %>%
+    mutate(year = year(order_date)) %>%
+    
+    group_by(category_2, year) %>%
+    summarize(revenue = sum(total_price)) %>%
+    ungroup() %>%
+    
+    mutate(category_2 = fct_reorder2(category_2, year, revenue))
+
+sales_by_year_category_2_tbl
+```
+
+```{r}
+sales_by_year_category_2_tbl %>% 
+    mutate(category_2_num = as.numeric(category_2)) %>% 
+    arrange(category_2_num)
+
+```
+
+## 3B working with colors 
+
+It is important to be comfrontable working with colors 
+
+### 3B.1 Color Conversion 
+
+
+```{r}
+colours()
+
+sales_by_year_category_2_tbl %>% 
+    ggplot(aes(x = year, y = revenue)) +
+    geom_col(fill = "slateblue2")
+```
+
+#### To RGB : Specifying color values as combinations of Red - Green - Blue 
+(e.g. White = 255 - 255 - 255)
+
+```{r}
+col2rgb("slateblue2")
+
+col2rgb("#2C3E50")
+```
+
+#### To Hex : Specifying a color by hexidecimal 
+
+```{r}
+rgb(44, 62, 80, maxColorValue = 225)
+```
+
+
+
+### 3B.2 Color Paletters 
+
+tidyquant 
+```{r}
+tidyquant::palette_light()[1] %>% col2rgb()
+```
+
+Brewer : for discrete data 
+```{r}
+RColorBrewer::display.brewer.all()
+RColorBrewer::brewer.pal.info %>% arrange(desc(maxcolors))
+RColorBrewer::brewer.pal(n = 100, name = "Blues")  
+
+sales_by_year_category_2_tbl %>% 
+    ggplot(aes(x = year, y = revenue)) +
+    geom_col(fill = RColorBrewer::brewer.pal(n = 100, name = "Blues")[3])
+```
+
+
+Viridis : 
+```{r}
+
+viridisLite::viridis(n = 20)
+
+sales_by_year_category_2_tbl %>% 
+    ggplot(aes(x = year, y = revenue)) +
+    geom_col(fill = viridisLite::viridis(n = 20)[5])
+```
+
+# 4.0 Aesthetic Mappings 
+
+## 4B color 
+Used with line nd points, Outlines of rectangular objects 
+
+ggplot2 data format & Modeling data format are the same! 
+
+"Tidy Data": One column of interest known as the target (e.g. target = revenue)
+
+Other columns describe the target 
+```{r}
+sales_by_year_category_2_tbl %>% 
+    ggplot(aes(year, revenue, color = category_2)) + # define Globally 
+    geom_line() +
+    geom_point()
+
+sales_by_year_category_2_tbl %>% 
+    ggplot(aes(year, revenue)) +
+    geom_line(aes(color = category_2)) +  # Define locally 
+    geom_point()
+
+sales_by_year_category_2_tbl %>% 
+    ggplot(aes(year, revenue)) +
+    geom_line(aes(color = category_2)) +
+    geom_point(color = "dodgerblue", size = 2)
+```
+
+## 4B Fill
+
+Info: 
+* Used with fill of rectangular objects
+
+* Do not confuse with colour and fill argument 
+
+```{r}
+sales_by_year_category_2_tbl %>% 
+    ggplot(aes(year, revenue)) + # define Globally 
+    geom_col() 
+
+sales_by_year_category_2_tbl %>% 
+    ggplot(aes(year, revenue, fill = category_2)) + # define Globally 
+    geom_col() 
+
+# Do not confuse fill with colour!!! 
+sales_by_year_category_2_tbl %>% 
+    ggplot(aes(year, revenue, color = category_2)) + # define Globally 
+    geom_col() 
+```
+
+
+## 4B Size
+
+Info :
+
+* Used with points 
+```{r}
+sales_by_year_category_2_tbl %>% 
+    ggplot(aes(year, revenue)) +
+    geom_line(aes(colour = category_2), size = 1) +
+    geom_point(aes(size = revenue))
+
+sales_by_year_category_2_tbl %>% 
+    ggplot(aes(year, revenue, size = revenue)) +
+    geom_line(aes(colour = category_2)) +
+    geom_point()
+
+sales_by_year_category_2_tbl %>% 
+    ggplot(aes(year, revenue, size = revenue)) +
+    geom_line(aes(colour = category_2), size = 1) +
+    geom_point()
+```
+
+# 5.0 Faceting ---
+
+Great way to tease out variation by category 
+
+Goal: Sales annual sales by category 2 
+
+```{r}
+sales_by_year_category_2_tbl %>% 
+    ggplot(aes(year, revenue, colour = category_2)) +
+    geom_line(colour = "black") +
+    geom_smooth(method = "lm", se = FALSE) +
+    facet_wrap(~ category_2, ncol = 3, scales = "free_y") +
+    expand_limits(y = 0) 
+
+```
+
+# 6.0 Position Adjustments (Stack & Dodge)
+
+* Stacked Bars & Side-By-Side Bars
+    + position = "Stack": Stack elements on top of each other 
+    + position_dodge(): Enables further customization of width and height attributes
+    
+```{r}
+# Stacked Bars & Side-By-Side Bars
+sales_by_year_category_2_tbl %>% 
+    ggplot(aes(year, revenue, fill = category_2)) +
+    # geom_col(position = "stack") +
+    # geom_col(position = "dodge") +
+    geom_col(position = position_dodge(width = 0.9), color = "white")
+
+# Stacked Area
+sales_by_year_category_2_tbl %>% 
+    ggplot(aes(year, revenue, fill = category_2)) +
+    geom_area(colour = "black")
+
+```
+
+# 7.0 Scales (colours, Fills. Axis)
+
+* continuous (e.g. Revenue): Changes color via gradient palette
+* Categorical (e.g.): Changes colour via discrete palette
+
+Plot 1: Faceted Plot, Colour = Continous Scale 
+```{r}
+
+g_facet_continous <- sales_by_year_category_2_tbl %>% 
+    ggplot(aes(year, revenue, colour =revenue)) +
+    geom_line(size = 1) +
+    geom_point(size = 3) +
+    
+    facet_wrap(~ category_2, scales = "free_y") +
+    expand_limits(y = 0) +
+    theme_minimal()
+
+g_facet_continous
+```
+Plot 2: Faceted Plot, Colour = Discrete Scale
+```{r}
+g_facet_discrete <- sales_by_year_category_2_tbl %>% 
+    ggplot(aes(year, revenue, colour = category_2)) +
+    geom_line(size = 1) +
+    geom_point(size = 3) +
+    facet_wrap(~category_2, scales = "free_y") +
+    expand_limits(y = 0)
+
+g_facet_discrete
+```
+
+Plot 2: Stacked Area plot
+```{r}
+g_area_discrete <- sales_by_year_category_2_tbl %>% 
+    ggplot(aes(year, revenue, fill = category_2)) +
+    geom_area(colour = "black") +
+    theme_minimal()
+
+g_area_discrete
+```
+
+
+## 7.2 Scale Colours & Fills
+
+- Awesome way to show variation by groups (discrete) and by values (continuous)
+- Because we have colour = category_2 
+
+colour by Revenue (continuous Scale): adjusting colour gradient 
+```{r}
+g_facet_continous +
+    scale_color_continuous(
+        low  = "cornflowerblue",
+        high = "black" 
+    )
+
+g_facet_continous +
+    scale_color_viridis_c(alpha = 0.7)
+
+```
+
+colour by Category 2: __discrete__ Scale
+
+```{r}
+g_facet_discrete +
+    scale_color_viridis_d()
+
+g_facet_discrete +
+    scale_color_brewer(palette = "PuRd") +
+    theme_dark()
+
+# RColorBrewer::display.brewer.all()
+```
+
+Fill by Category 2
+
+```{r}
+RColorBrewer::display.brewer.all()
+
+g_area_discrete +
+    scale_fill_brewer(palette = "Set3")
+
+g_area_discrete +
+    scale_fill_viridis_d()
+
+g_area_discrete +
+    scale_fill_tq() 
+```
+
+## 7.3 Axis Scales 
+
+```{r}
+g_facet_continous +
+    scale_color_viridis_c(alpha = 0.8) +
+    # gives more room to breath on the x-axis 
+    scale_x_continuous(breaks = seq(2011, 2015, by = 2)) +
+    scale_y_continuous(labels = scales::dollar_format(scale = 1e-6, suffix = "M")) +
+    theme_minimal()
+```
+
+# 8.0 Labels 
+
+```{r}
+g_facet_continous +
+    scale_x_continuous(breaks = seq(2011, 2015, by = 2)) +
+    scale_y_continuous(labels = scales::dollar_format(scale = 1e-6, suffix = "M")) +
+    geom_smooth(method = "lm", se = FALSE, color = "black") +
+    
+    scale_color_viridis_c() +
+    theme_dark() +
+    
+    labs(
+        title = "Bike Sales",
+        subtitle = "Sales are trending up",
+        caption = "5 year sales trends\ncomes from our RP Data base",
+        x = "Year",
+        y = "Revenue ($M)",
+        colour = "Revenue"
+    )
+    
+```
+
+
+# 9.0 Labels 
+
+theme_light(): Pre-set theme
+theme(): The function used to adjust every theme element that is part of a ggplot object 
+```{r}
+g_facet_continous +
+    theme_light() +
+    theme(
+        axis.text.x = element_text(
+            angle = 45, 
+            hjust = 1
+            ),
+        strip.background = element_rect(
+            colour = "black", 
+            fill   = "cornflowerblue",
+            size   = 1
+            ),
+        strip.text = element_text(
+            face = "bold",
+            colour = "White"
+        )
+    )
+
+```
+
+10.0 Putting it All Together 
+
+```{r}
+sales_by_year_category_2_tbl %>% 
+    ggplot(aes(year, revenue, fill = category_2)) +
+    geom_area(colour = "white") +
+    
+    scale_fill_brewer("Blues", direction = -1) +
+    scale_y_continuous(label = scales::dollar_format(scale = 10e-6, suffix = "M")) +
+    
+    labs(
+        title = "Sales Over Year by Category 2",
+        subtitle = "Sales Trending Up",
+        caption = "Bike Sales trends look strong heading into 2016",
+        x = "",
+        y = "Revenue ($M)",
+        fill = "2nd Category"
+    ) +
+    theme_minimal() +
+    theme(
+        title = element_text(face = "bold", colour = "#08306B")
+    )
+
+```
+
+
+
+
+
+

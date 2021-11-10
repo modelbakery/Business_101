@@ -1,5 +1,5 @@
 ---
-title: "101_wk4_Data_Vis_Basic"
+title: "101_WK4_Data_Vis_Basic"
 author: "Seung Hyun Sung"
 date: "11/8/2021"
 output: html_document
@@ -54,6 +54,7 @@ ggplot2 is super flexible giving tons of options. The downside in this flexibili
 
 
 ```{r, include =FALSE}
+getwd()
 bike_orderlines_tbl <- read_rds("00_data/bike_sales/data_wrangled/bike_orderlines.rds")
 
 glimpse(bike_orderlines_tbl)

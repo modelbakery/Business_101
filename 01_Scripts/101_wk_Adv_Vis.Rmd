@@ -2,7 +2,9 @@
 title: "101_wk4_Adv_Vis"
 author: "Seung Hyun Sung"
 date: "11/10/2021"
-output: html_document
+output:
+  pdf_document: default
+  html_document: default
 ---
 
 # DS4B 101-R: R FOR BUSINESS ANALYSIS ---- 

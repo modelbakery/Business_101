@@ -58,6 +58,8 @@ library(yardstick)
 
 # Plotting Decision Trees
 library(rpart.plot)
+
+library(tidymodels)
 ```
 
 
@@ -687,22 +689,26 @@ model_06_rand_forest_randomForest$fit %>%
     ) +
     theme_tq()
 ```
-
-
 > ProTips: Always make your researh reproducible. This makes it easier for others to heck your work, getting the same result as you. (model robustness)
 
 # 4.3 XGBOOST ----
+?boost_tree
+?xgboost::xgboost
+
+__Learning Rate__ Thye gradient decent learning rate is used to find the global optima that reduces the model error (loss function). Too low, and algorithm gets stuck in a local optima. Too high, and it misses the global optima.
+
 
 # 4.3.1 Model ----
 
 ```{r}
+set.seed(42)
+# Linear Booster
+# Tree Booster
 
-?boost_tree
-?xgboost::xgboost
-
-set.seed(1234)
 model_07_boost_tree_xgboost <- boost_tree(
+    # unknown, regression, classification  
     mode = "regression", 
+    # Number for the number of precditors that will be randomly sampled at each split when reating the tree models 
     mtry = 30,
     learn_rate = 0.25,
     tree_depth = 7
@@ -735,6 +741,11 @@ model_07_boost_tree_xgboost$fit %>%
 
 
 # 5.0 TESTING THE ALGORITHMS OUT ----
+
+> Protip: It is always a good idea to set up an experiemnt to determine if your models are predicting how you think they should predict.
+> In this session, we will see how we can use data visualisation to help determine model effectivness and performnce! 
+
+Taks: Predict Price for New Bike Models 
 
 ```{r}
 
@@ -799,8 +810,10 @@ predict(model_07_boost_tree_xgboost, new_data = new_over_mountain_jekyll)
 
 
 # Iteration
-```{r}
 
+> ProTips: Data Frames can be a very useful way to keep models organised. Just put them in a "list-column"
+
+```{r}
 models_tbl <- tibble(
     model_id = str_c("Model 0", 1:7),
     model = list(
@@ -821,9 +834,16 @@ models_tbl
 # Add Predictions
 
 ```{r}
+# map(.x, .f, ...)
+# The dots (...) are arguments you can specify in the mapping function (.f)
+# .f = predict(object, new_data)
+# The object is the models in our model column
+# The new_data is our new over Mountain Bike
 
 predictions_new_over_mountain_tbl <- models_tbl %>%
-    mutate(predictions = map(model, predict, new_data = new_over_mountain_jekyll)) %>%
+    mutate(predictions = map(model, 
+                             predict, 
+                             new_data = new_over_mountain_jekyll)) %>%
     unnest(predictions) %>%
     mutate(category_2 = "Over Mountain") %>%
     left_join(new_over_mountain_jekyll, by = "category_2")
@@ -836,14 +856,17 @@ predictions_new_over_mountain_tbl
 # Update plot
 
 ```{r}
-
-
 g2 <- g1 +
-    geom_point(aes(y = .pred), color = "red", alpha = 0.5,
-               data = predictions_new_over_mountain_tbl) +
-    ggrepel::geom_text_repel(aes(label = model_id, y = .pred),
-                             size = 3,
-                             data = predictions_new_over_mountain_tbl)
+    geom_point(
+        aes(y = .pred), color = "red", alpha = 0.5,
+               data = predictions_new_over_mountain_tbl
+        ) +
+    ggrepel::geom_text_repel(
+        aes(label = model_id, y = .pred),
+            size = 2,
+        max.overlaps = 100,
+            data = predictions_new_over_mountain_tbl
+        )
 
 ```
 
@@ -867,45 +890,60 @@ new_triathalon_slice_tbl <- tibble(
 ) 
 ```
 
+> Red Flag: Linear Models have an issue with predicting Triathlon bikes 
 
-# Linear Methods ----
-predict(model_03_linear_glmnet, new_data = new_triathalon_slice_tbl)
+> We actually only need category_2 and frame_material. This simplifies the code quite a bit 
 
-# Tree-Based Methods ----
-predict(model_07_boost_tree_xgboost, new_data = new_triathalon_slice_tbl)
+```{r}
+new_triathalon_slice_tbl
 
-# Iteration
-predictions_new_triathalon_tbl <- models_tbl %>%
-    mutate(predictions = map(model, predict, new_data = new_triathalon_slice_tbl)) %>%
-    unnest(predictions) %>%
+predictions_new_triathalon_tbl <- models_tbl %>% 
+    mutate(
+        predictions = map(model, predict, new_data = new_triathalon_slice_tbl)
+        ) %>% unnest(predictions) %>% 
     mutate(category_2 = "Triathalon", frame_material = "Aluminum")
-
-
-predictions_new_triathalon_tbl
+    
+    
+```
 
 # Update Plot
-g2 +
+
+```{r}
+g3 <- g2 +
     geom_point(aes(y = .pred), color = "red", alpha = 0.5, 
                data = predictions_new_triathalon_tbl) +
     ggrepel::geom_text_repel(aes(y = .pred, label = model_id), 
                              size = 3,
+                             max.overlaps = 500,
                              data = predictions_new_triathalon_tbl)
+g3
+```
+
 
 # 6.0 ADDITIONAL ADVANCED CONCEPTS ----
 
-# - CLASSIFICATION - Binary & Multi-Class
-# - ADVANCED ALGORITHMS
-#   - SVMs - svm_poly() and svm_rbf() - Must be normalized
-#   - Neural Networks - keras - Must be normalized
-#   - Stacking Models 
-# - PREPROCESSING - recipes 
-# - HYPERPARAMETER TUNING - purrr
-# - SAMPLING & CROSS VALIDATION - rsample 
-# - AUTOMATIC MACHINE LEARNING - H2O
-
+- CLASSIFICATION - Binary & Multi-Class
+- ADVANCED ALGORITHMS
+  - SVMs - svm_poly() and svm_rbf() - Must be normalized
+  - Neural Networks - keras - Must be normalized
+  - Stacking Models 
+- PREPROCESSING - recipes 
+- HYPERPARAMETER TUNING - purrr
+- SAMPLING & CROSS VALIDATION - rsample 
+- AUTOMATIC MACHINE LEARNING - H2O
 
 
 # 7.0 BONUS - PREPROCESSING & SVM-Regression ----
+
+> In step_dummy() process
+> ProTips: Set one_hot = TRUE to get all of the categories as columns. By default, step_dummy() returns one less column than number of categories
+
+*** FIX 4 *** ----
+Error: Assigned data `log(new_data[[col_names[i]]] + object$offset, base = object$base)` must be compatible with existing data.
+ - Recipe interface has changed when applying recipes to the target
+ - Need to use skip = TRUE
+    
+```{r}
 
 library(recipes)
 
@@ -914,48 +952,80 @@ library(recipes)
 ?prep
 ?bake
 
-train_tbl
-
 recipe_obj <- recipe(price ~ ., data = train_tbl) %>%
+    # step_rm: remove variables
     step_rm(id, model, model_tier) %>%
+  
+    # step_dummy: 
+    # converts categorical data to bianry columns (os and 1s)
+    # all_nominal(): selects any variables that are categorical 
     step_dummy(all_nominal(), one_hot = TRUE) %>%
     
-    # *** FIX 4 *** ----
-    # Error: Assigned data `log(new_data[[col_names[i]]] + object$offset, base = object$base)` must be compatible with existing data.
-    # - Recipe interface has changed when applying recipes to the target
-    # - Need to use skip = TRUE
-
+    # *** END FIX 4 *** ----
     # step_log(price) %>%
     # step_center(price) %>%
     # step_scale(price) %>%
     
+    # step_center(): substracts the mean of the numeric feature
+    # step_log(): Applies a logarithmic transformation. Great for 
+    # normalising skew (making distribution a bell curve shape)
     step_log(price, skip = TRUE) %>%
     step_center(price, skip = TRUE) %>%
     step_scale(price, skip = TRUE) %>%
     
     # *** END FIX 4 *** ----
     
+    # prep():
+    # Once steps have been added, prep() will perform initial calculations 
+    # prior to applying the recipe 
     prep()
 
 bake(recipe_obj, train_tbl) %>% glimpse()
+bake(recipe_obj, test_tbl) %>% glimpse()
+
+# tidy(recipe): tidying a recipe returns information on all of the steps!!!
+tidy(recipe_obj)
+
+# Tidying a recipe and including a step number returns information on the step 
+scale  <- tidy(recipe_obj, 5)
+center <- tidy(recipe_obj, 4)
+```
+
 
 # *** FIX *** ----
+Why the error occurs:
+
+Any time that we apply a recipe step to an "outcome" (e.g. the price column) that is not present in new data
+Solution 1 - Use `skip = TRUE` in the recipe step and `juice()` instead of `bake()` to transform the training data set
+Solution 2 - Include an artificial outcome column in the new_data that allows the steps to be performed instead of causing an error.
+
+```{r}
+
 # - Recipe interface has changed when applying recipes to the target (when skip = TRUE)
 # - Need to juice() instead of bake()
 
 # train_transformed_tbl <- bake(recipe_obj, train_tbl)
-train_transformed_tbl <- juice(recipe_obj)
+train_transformed_tbl <- juice(recipe_obj) %>% 
+  select(price, everything())
 
 # *** END FIX *** ----
 
-test_transformed_tbl  <- bake(recipe_obj, test_tbl)
+test_transformed_tbl  <- bake(recipe_obj, test_tbl) %>% 
+  select(price, everything())
 
 tidy(recipe_obj)
 scale  <- tidy(recipe_obj, 5)
 center <- tidy(recipe_obj, 4)
+tidy(recipe_obj, 3)
+```
 
+> Protips: Whenever we transform data we need to reverse the transformations after making predictions 
+
+> likewise to glm, svm has scaling built into the model. Hence once we have pre-processed feature scaling, we need to avoid double scaling by scale = FALSE. Double scaling with reduce the model performance
 
 # SVM: Radial Basis
+
+```{r}
 ?svm_rbf
 ?kernlab::ksvm
 
@@ -970,13 +1040,18 @@ model_08_svm_rbf %>%
     mutate(
         .pred = .pred * scale$value,
         .pred = .pred + center$value,
+        # reverse the log
         .pred = exp(.pred)
         ) %>%
     bind_cols(test_tbl %>% select(price)) %>%
     yardstick::metrics(truth = price, estimate = .pred)
+```
+
 
 # Predictions
 
+```{r}
+# fix are done for this part: new data without the y values(price)
 bake(recipe_obj, new_data = new_over_mountain_jekyll) %>%
     predict(object = model_08_svm_rbf, new_data = .) %>%
     mutate(
@@ -989,7 +1064,11 @@ predictions_new_over_mountain_tbl
 
 g2
 
-# g3
+g3
+```
+
+
+```{r}
 
 bake(recipe_obj, new_data = new_triathalon_slice_tbl) %>%
     predict(object = model_08_svm_rbf, new_data = .) %>%
@@ -1004,10 +1083,12 @@ predictions_new_triathalon_tbl
 bike_features_tbl %>% 
     filter(category_2 == "Endurance Road") %>%
     arrange(price)
+```
 
 
 # 8.0 SAVING & LOADING MODELS ----
 
+```{r}
 fs::dir_create("00_models")
 
 models_tbl <- list(
@@ -1018,27 +1099,30 @@ models_tbl <- list(
     "MODEL_05__RF_RANGER"       = model_05_rand_forest_ranger,
     "MODEL_06__RF_RANDOMFOREST" = model_06_rand_forest_randomForest,
     "MODEL_07__XGBOOST" = model_07_boost_tree_xgboost,
-    "MODEL_08__SVM"     = model_08_svm_rbf
-) %>%
+    "MODEL_08__SVM"     = model_08_svm_rbf) %>%
     enframe(name = "model_id", value = "model")
 
 models_tbl
 
 models_tbl %>% write_rds("00_models/parsnip_models_tbl.rds")
 
-recipes_tbl <- list(
-    "RECIPE_01" = recipe_obj
-) %>%
+recipes_tbl <- list("RECIPE_01" = recipe_obj) %>%
     enframe(name = "recipe_id", value = "recipe")
 
 recipes_tbl %>% write_rds("00_models/recipes_tbl.rds")
 
-calc_metrics %>% write_rds("00_scripts/calc_metrics.rds")
+calc_metrics %>% write_rds("01_scripts/calc_metrics.rds")
+
+```
+
 
 # Reading
 
+```{r}
 models_tbl <- read_rds("00_models/parsnip_models_tbl.rds")
 
 recipes_tbl <- read_rds("00_models/recipes_tbl.rds")
 
-calc_metrics <- read_rds("00_scripts/calc_metrics.rds")
+calc_metrics <- read_rds("01_scripts/calc_metrics.rds")
+```
+

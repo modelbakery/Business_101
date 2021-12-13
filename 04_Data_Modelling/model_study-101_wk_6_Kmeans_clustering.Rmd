@@ -3,8 +3,8 @@ title: "model_study:101_wk_6_Kmeans_clustering"
 author: "Seung Hyun Sung"
 date: "11/18/2021"
 output:
-  pdf_document: default
   html_document: default
+  pdf_document: default
 ---
 
 ```{r setup, include=FALSE}

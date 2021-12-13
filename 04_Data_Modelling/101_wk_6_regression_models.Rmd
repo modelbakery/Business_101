@@ -1,0 +1,1044 @@
+---
+title: "101_wk_6_regression_models"
+author: "Seung Hyun Sung"
+date: "11/21/2021"
+output: html_document
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# DS4B 101-R: R FOR BUSINESS ANALYSIS ----
+# REGRESSION MODELS ----
+
+# GOAL: BUILD PREDICTION MODEL FOR PRICING ALGORITHM
+
+Regression: A technique to predict numeric values of a feature in a dataset 
+
+parsnip: A package that provides an API to many powerful modeling algorithms in R (modeling package). An interface that standardizes the making of models in R. 
+
+* Idea: One issue with different functions available in R that do the same thing is that they can have different interfaces and arguments. The parsnip interface solves this issue by providing consistency. 
+
+* engines: an engine is the underlying algorithm that you are connecting parsnip to 
+
+
+recipes: Preprocessing
+
+* making statistical transformations piror to modeling 
+
+rsample: Sampling & Cross Validation 
+
+* Includes various sampling methods 
+
+yardstick: Model Metrics (e.g. MAE, RMSE)
+
+* Get model metrics for model comparison 
+
+
+# LIBRARIES & DATA ----
+
+
+```{r, message=FALSE, warning=FALSE}
+# Standard
+library(readxl)
+library(tidyverse)
+library(tidyquant)
+
+# Modeling
+library(parsnip)
+
+# Preprocessing & Sampling
+library(recipes)
+library(rsample)
+
+# Modeling Error Metrics
+library(yardstick)
+
+# Plotting Decision Trees
+library(rpart.plot)
+```
+
+
+# Source Scripts
+```{r}
+source("01_scripts/separate_bikes_and_outlier_detection.R")
+```
+
+# Read Data
+```{r}
+bike_orderlines_tbl <- read_rds("~/Desktop/University_business_science/DS4B_101/00_data/bike_sales/data_wrangled/bike_orderlines.rds")
+
+glimpse(bike_orderlines_tbl)
+```
+
+
+
+# 1.0 PROBLEM DEFINITION ----
+
+* Which Bike Categories are in high demand?
+* Which Bike Categories are under represented?
+* GOAL: Use a pricing algorithm to determine a new product price in a category gap
+
+```{r}
+
+model_sales_tbl <- bike_orderlines_tbl %>%
+    select(total_price, model, category_2, frame_material) %>%
+    
+    group_by(model, category_2, frame_material) %>%
+    summarise(total_sales = sum(total_price)) %>%
+    ungroup() %>%
+    
+    arrange(desc(total_sales))
+
+
+```
+
+
+Comment: 
+
+* Not all categories have an Aluminum Option 
+
+* As Sport model is most basic model, lunching a new Carbon framed Sport model probability would not be an effective business opportunity. Conversely, products with "High-End" (Carbon Option) only could be missing out (e.g. Over Mountain model with only Carbon frame model). This might be a logical areas for us to focus on.
+
+
+* __Product Gap!__ By all means, learning to identify product gaps and convert them into __business opportunities__ which will help the business growth. Simply is a market segment that existing businesses are not yet serving. One could find this opportunity & discover the not served or future demand internally or externally via market research and by analysing google trends - __Market Gap__
+    + Using Google Trends to Find Niches 
+    + Find Relevant Product Categories in Related Topics
+    + Using Google Trends for Keyword Research
+    + Promote Your Store Around Seasonal Trends
+    + Using Google Trends for Content Freshness
+    + Create Content About Current Trends
+    + Find Niche Topics by Region
+    + Monitor Competitors' Position with Google Trends Compare 
+    + Google Trends YouTube 
+    + Google Trends Google Shopping 
+
+* Once one found the product gap, in here, we can focus on product like "Over Mountain" and "Triathalon" for new product development, its profitability needs to be carefully verified and modeling using the pricing algorithm. The basic statistics of the out put price, e.g. mean, variance, and pairwise comparison, intra-cluster correlation will all need to take account for consideration. When done right, one could potentially generate significant revenue by filling in the gaps. 
+
+```{r}
+model_sales_tbl %>%
+    mutate(category_2 = as_factor(category_2) %>%
+               # reorder by max revenue generating model 
+               fct_reorder(total_sales, .fun = max) %>%
+               fct_rev()) %>%
+    
+    ggplot(aes(frame_material, total_sales)) +
+    geom_violin() +
+    geom_jitter(width = 0.1, alpha = 0.5, color = "#2c3e50") +
+    #coord_flip() +
+    facet_wrap(~ category_2) +
+    scale_y_continuous(labels = scales::dollar_format(scale = 1e-6, suffix = "M", accuracy = 0.1)) +
+    theme_tq() +
+    labs(
+        title = "Total Sales for Each Model",
+        x = "Frame Material", y = "Revenue"
+    )
+```
+
+
+# 2.0 TRAINING & TEST SETS ----
+
+Comment:
+
+ID: Tells us which rows are being sampled
+
+Target (price): What we are trying to predict
+
+Predictors (all other columns): Data that our algorithms will use to build relationships to target.
+
+* Data manipulation:
+    + Adding row_number - ID prior to data partitioning. 
+    + Operate separate_bike_model pre-made function - Data wranggled. Our custom function for adding engineered features built from the "model" column. 
+    + It can be effective to make feature engineered custom function as wrangling specific parts of the column is organised approach + more interpretable.
+
+```{r}
+bike_features_tbl <- bike_orderlines_tbl %>%
+    # category_1 is not needed because category_2 comprises it
+    select(price, model, category_2, frame_material) %>%
+    
+    distinct() %>%
+    
+    mutate(id = row_number()) %>%
+    
+    select(id, everything()) %>%
+    # separate_bike_model: Data frame function 
+    # both argument set TRUE, as we want to keep all the columns including model
+    separate_bike_model(keep_model_column = T, append = T)
+
+bike_features_tbl
+
+```
+#### Pro Tip:
+
+[1] Splitting into training & test sets helps to __prevent over-fitting__ and improve model __generalization__, the ability for a model to perform well on future data. Even better is __cross-validation__.
+
+[2] Generalisation is the goal, as we do not want the algorithm to train only on the data we see, but also with new data that can be generated for the future. 
+
+[3] The model_base feature has 18 levels. A random split may not have all levels in the training set, which is bad. We can try to prevent this by adding as model_base as a stratafication variable. 
+
+Comment:
+
+* strata: The strata argument causes the random sampling to be conducted within the stratification variable. The can help ensure that the number of data points in the analysis data is equivalent to the proportions in the original data set. 
+
+```{r}
+
+set.seed(42)
+
+split_obj <- rsample::initial_split(bike_features_tbl, prop = 0.8, strata = "model_base")
+
+bike_features_tbl %>% distinct(model_base)
+
+# Have all 18 objects from model_base column -> managed to avoid concern!
+split_obj %>% training() %>% distinct(model_base)
+# Have all 12 objects from model_base column -> having less object on the testing set is not as severe as missing on the training set. 
+split_obj %>% testing() %>% distinct(model_base)
+
+train_tbl <- split_obj %>% training()
+test_tbl <- split_obj %>% testing()
+```
+
+
+# *** FIX 1 *** ----
+# Error: factor model_base has new levels Fat CAAD2
+# - Need to move Fat CAAD2 from test to training set because model doesn't know how to handle
+#   a new category that is unseen in the training data
+
+```{r}
+train_tbl <- train_tbl %>%
+    bind_rows(
+        test_tbl %>% filter(model_base %>% str_detect("Fat CAAD2"))
+    )
+
+test_tbl <- test_tbl %>%
+    filter(!model_base %>% str_detect("Fat CAAD2"))
+
+```
+
+
+# *** END FIX 1 *** ----
+
+linear_reg: Creates a parsnip specification for a linear regression 
+* engines:
+    + lm (default)
+    + glmnet
+    + stan
+    + spark
+    + keras
+    
+* The penalty & mixture argument (tunable variable)
+    + lm: Does not have any adjustable parameters
+
+# 3.0 LINEAR METHODS ----
+```{r}
+?linear_reg
+?set_engine
+?fit
+?predict.model_fit
+?metrics
+```
+
+
+#### Parsnip API: Three Steps
+
+* [1] Create a model linear_reg()
+
+* [2] Set a engine set_engine()
+
+* [3] Fit the model to data fit()
+
+# 3.1 LINEAR REGRESSION - NO ENGINEERED FEATURES ----
+
+Comment:
+
+* Model Metrics: we calculate model metrics comparing the test data predictions with the actual values to get a baseline model performance
+
+* Residuals: Difference between actual (truth) and prediction 9estimate from the model) 
+
+* MAE: Mean Absolute Error
+    + Absolute value of residuals generates the magnitude of error
+    + Take the averages to get the average error
+
+
+#### Model Interpretability for Linear Model - How it works 
+
+* Dealing with Categorical Predictors
+
+Making a Linear Regression interpretable is very easy provided all of the predictors are categorical (meaning any numeric predictors need to be binned so their values are interpreted in the model as low/med/high). 
+
+* Dealing with Numeric Predictors
+
+For numeric features, we just need to bin them prior to performing the regression to make them categorical in bins like High, Medium, Low. Otherwise, the coefficients will be in the wrong scale for the numeric predictors. We saw in the course how to do this - You have a few options, and my preference is using a mutate() with case_when(). You can find the price at the 33th and 66th quantile with quantile(probs = c(0.33, 0.66)). Then just use those values to create low, medium, high categories.
+
+Our models in the course have categorical data, but in the future just remember that numeric predictors will need to be converted to categorical (i.e. binned) prior to making an interpretable plot like the plot above.
+
+# 3.1.1 Model ----
+
+```{r}
+# leave the penalty and mixture NULL for now: as our operation focus is lm
+model_01_linear_lm_simple <- linear_reg(mode = "regression") %>% 
+    set_engine("lm") %>% 
+    fit(price ~ category_2 + frame_material, data = train_tbl)
+
+model_01_linear_lm_simple %>% class()
+# [1] "_lm"       "model_fit"
+
+model_01_linear_lm_simple %>% 
+    predict(new_data = test_tbl) %>%
+    
+    bind_cols(test_tbl %>% select(price)) %>%
+    # residuals = actual(Y) - predict(Y^)
+    mutate(residuals = price - .pred) %>% 
+    summarise(
+        # abs: absolute value as we only want the magnitude not direction 
+        mae = abs(residuals) %>% mean(),
+        # 1. square. 2. average. 3. taking the sqaure root 
+        rmse = mean(residuals^2)^0.5
+    )
+
+
+model_01_linear_lm_simple %>% 
+    predict(new_data = test_tbl) %>%
+    
+    bind_cols(test_tbl %>% select(price)) %>%
+    yardstick::metrics(truth = price, estimate = .pred)
+    
+```
+
+
+# 3.1.2 Feature Importance ----
+
+#### Model Terms & Coefficients (Estimates)
+
+In a linear model, the predicitors become terms. The algorithm then assigns coefficients (estimate) to the terms. 
+
+These estimates are:
+
+* If term is categorical, estimate is in units of the output 
+
+* If term is numeric, need to multiply by the term's state
+
+* Prediction = c1* Term1 + c2* Term2 + c3* Term3 + ... + Intercept (the value that all predictions start with)
+
+#### Example: Price of Carbon Triathalon Bike 
+
+Price = intercept + c1* frame_materialCarbon + c2* category2_Triathalon = \$2,639 + \$3,659* (1) + (-$2,427)* (1) = \$3,871
+
+#### Model coefficient for Numeric VS categorical:
+
+categorical data is always converted to binary. This makes interpretation very easy because coefficients are in terms of the output.
+
+Numeric data will be in values of the numeric feature. If numeric feature was weight, the coefficient will be in dollars per unit weight. 
+
+
+Comment:
+
+* fit: the model from the stats::lm() function is stored in the "fit" element 
+
+* parsnip as a n interface: The parsnip functions provide consistent wrappers around modelling functions in the R modelling package ecosystem. 
+
+* The broom package for lm has all available methods: tidy & glance & augment 
+```{r}
+
+model_01_linear_lm_simple
+
+model_01_linear_lm_simple$fit %>% class()
+
+model_01_linear_lm_simple$fit %>%
+    broom::tidy() %>%
+    arrange(p.value) %>%
+    mutate(term = as_factor(term) %>% fct_rev()) %>%
+    
+    ggplot(aes(x = estimate, y = term)) +
+    geom_point() +
+    # accuracy = 1, removes cents (decimal palces)
+    ggrepel::geom_label_repel(aes(label = scales::dollar(estimate, accuracy = 1)),
+                              size = 3,
+                              max.overlaps = getOption("ggrepel.max.overlaps", default = 100)) +
+    scale_x_continuous(labels = scales::dollar_format()) +
+    labs(title = "Linear Regression: Feature Importance",
+         subtitle = "Model 01: Simple lm Model") + 
+    theme_tq()
+
+```
+
+This is our baseline model. We will try to improve the performance of the model and see how the feature importance and their weights changes in the process of adding complexity. 
+
+
+# 3.1.3 Function to Calculate Metrics ----
+
+comments: 
+
+* The feature importance will change between the model to model
+
+* The process of the metrics to predict the model performance (bind_cols and yardsticks). Hence we will make this metrics process into function to compress the workflow and reduce repeatiable work. 
+
+```{r}
+model_01_linear_lm_simple %>% 
+    predict(new_data = test_tbl) %>%
+    
+    bind_cols(test_tbl %>% select(price)) %>%
+    yardstick::metrics(truth = price, estimate = .pred)
+
+
+calc_metrics <- function(model, new_data = test_tbl){
+    model %>% 
+    predict(new_data = new_data) %>%
+    
+    bind_cols(new_data %>% select(price)) %>%
+    yardstick::metrics(truth = price, estimate = .pred)
+}
+
+model_01_linear_lm_simple %>% calc_metrics(test_tbl)
+
+
+```
+
+
+# 3.2 LINEAR REGRESSION - WITH ENGINEERED FEATURES ----
+
+# 3.2.1 Model ----
+
+#### Pro Tip: number 1 way to improve model performance is:
+
+Including better features! Spend max time here. Moving to advanced models won't help you if you dont have a good features. As a rule of thumb, supplying appropriate additional features that trains the model will always out perform models that selected from bunch of different algorithm. -> without changing the algorithm 
+
+```{r}
+
+model_02_linear_lm_complex <- linear_reg(mode = "regression") %>% 
+    set_engine("lm") %>% 
+    fit(price ~., data = train_tbl %>% select(-c(id, model, model_tier)))
+
+# Goodness of fit (RSS) metrics on Training Set 
+model_01_linear_lm_simple$fit %>% glance()
+model_02_linear_lm_complex$fit %>% glance()
+
+# Goodness of fit metrics on Testing Set 
+model_02_linear_lm_complex %>% calc_metrics(new_data = test_tbl)
+```
+
+
+# 3.2.2 Feature importance ----
+
+```{r}
+model_02_linear_lm_complex$fit %>%
+    broom::tidy() 
+
+model_02_linear_lm_complex$fit %>%
+    broom::tidy() %>%
+    filter(complete.cases(.)) %>% 
+    arrange(p.value) %>%
+    mutate(term = as_factor(term) %>% fct_rev()) %>%
+    
+    ggplot(aes(x = estimate, y = term)) +
+    geom_point() +
+    ggrepel::geom_label_repel(aes(label = scales::dollar(estimate, accuracy = 1)),
+                              size = 3) +
+    scale_x_continuous(labels = scales::dollar_format()) +
+    labs(title = "Linear Regression: Feature Importance",
+         subtitle = "Model 02: Complex lm Model")
+
+```
+
+
+# 3.3 PENALIZED REGRESSION ----
+
+# 3.3.1 Model ----
+
+Regularization: A penalty factor that is applied to columns that are present but that have lower predictive value. 
+
+Model parameter:
+
+* penalty: A non-negative number representing the total amount of regularization (specific engines only).
+
+* mixture: A number between zero and one (inclusive) that is the proportion of L1 regularization (i.e. lasso) in the model. When mixture = 1, it is a pure lasso model while mixture = 0 indicates that ridge regression is being used (specific engines only).
+
+```{r}
+?linear_reg
+?glmnet::glmnet
+
+model_03_linear_glmnet <- linear_reg(mode = "regression", penalty = 200, mixture = 0.1) %>%
+    set_engine("glmnet") %>%
+    fit(price ~ ., data = train_tbl %>% select(-id, -model, -model_tier))
+
+
+model_03_linear_glmnet %>% calc_metrics(test_tbl)
+
+```
+
+
+# 3.3.2 Feature Importance ----
+
+__Hyper Parameter Tuning__: Systematically adjusting the model parameters to optimize the performance 
+
+__Grid Search__: A popular hyperparameter tuning method of producing a "grid" that has many combinations of parameters
+
+In statistics, deviance is a goodness-of-fit statistic for a statistical model; it is often used for statistical hypothesis testing. It is a generalization of the idea of using the sum of squares of residuals (RSS) in ordinary least squares to cases where model-fitting is achieved by maximum likelihood. It plays an important role in exponential dispersion models and generalized linear models.
+
+https://www.youtube.com/watch?v=UaU-WZIf8c4
+https://www.youtube.com/watch?v=9lRv01HDU0s
+
+
+```{r}
+
+model_03_linear_glmnet$fit %>%
+    broom::tidy() %>% 
+    # *** FIX 2 *** ----
+    # Problem: glmnet returns all lambda (penalty) values assessed
+    # Solution: Filter to the max dev.ratio, which is the "optimal" lambda according to glmnet
+    filter(dev.ratio == max(dev.ratio)) %>%
+    # *** END FIX 2 *** ----
+    
+    arrange(desc(abs(estimate))) %>%
+    mutate(term = as_factor(term) %>% fct_rev()) %>%
+    
+    ggplot(aes(x = estimate, y = term)) +
+    geom_point() +
+    ggrepel::geom_label_repel(aes(label = scales::dollar(estimate, accuracy = 1)),
+                              size = 3) +
+    scale_x_continuous(labels = scales::dollar_format()) +
+    labs(title = "Linear Regression: Feature Importance",
+         subtitle = "Model 03: GLMNET Model") +
+    theme_tq()
+
+
+```
+
+
+# 4.0 TREE-BASED METHODS ----
+
+# 4.1 DECISION TREES ----
+
+* Tree-based model acquire minimal pre-processing 
+
+* Random Forest & XGBoost:
+    + Pro: High performance 
+    + Con: Less Explainability 
+
+# 4.1.1 Model ----
+
+Avoid Overfitting: Tree-based methods can beome over-fit if we let the nodes contain too few data points or the trees to grow too large. (aka. high variance)
+
+Avoid Underfitting: if tree is too shallow or too many data points are required per node, tree becomes under-fit (aka. high bias)
+
+__purrr__: should be used for hypertuning optimization 
+```{r}
+
+?decision_tree
+?rpart::rpart
+
+model_04_tree_decision_tree <- decision_tree(mode = "regression", 
+              cost_complexity = 0.001, 
+              tree_depth      = 7, 
+              min_n           = 6) %>%
+    set_engine("rpart") %>%
+    fit(price ~ ., data = train_tbl %>% select(-id, -model, -model_tier))
+
+model_04_tree_decision_tree %>% calc_metrics(test_tbl)
+```
+
+
+# 4.1.2 Decision Tree Plot ----
+
+```{r}
+
+?rpart.plot()
+
+model_04_tree_decision_tree$fit 
+
+model_04_tree_decision_tree$fit %>%
+    # roundint = FALSE to avoid warning: model=TRUE needed to include y(price) object to the model
+    rpart.plot(roundint = FALSE)
+
+?rpart.plot
+
+model_04_tree_decision_tree$fit %>%
+    rpart.plot(
+        roundint = FALSE,
+        # type of node display 
+        type = 1, 
+        # number of percentage display on node 
+        extra = 101,
+        fallen.leaves = FALSE, 
+        cex = 0.8,
+        main = "Model 04: Decision Tree", 
+        box.palette = "Blues"
+        )
+
+show.prp.palettes()
+
+```
+
+
+# 4.2 RANDOM FOREST ----
+
+# 4.2.1 Model: ranger ----
+
+__Reproducibility__ the results will be different as it is a random forest proess, and we did not make this reproducible. Don't worry we will show you how to make the random forest reproducible in a couple lectures 
+
+
+```{r}
+?rand_forest()
+?ranger::ranger
+
+set.seed(1234)
+model_05_rand_forest_ranger <- rand_forest(
+    mode = "regression", 
+    mtry = 8, 
+    trees = 2000, 
+    min_n = 5
+    ) %>%
+    set_engine("ranger",
+               replace = TRUE,
+               splitrule = "extratrees",
+               importance = "impurity") %>%
+    fit(price ~ .,
+        data = train_tbl %>% select(-id, -model, -model_tier) %>%
+            mutate_if(is.character, factor))
+
+model_05_rand_forest_ranger %>% calc_metrics(test_tbl)
+
+```
+
+
+# 4.2.2 ranger: Feature Importance ----
+
+__enframe()__: turns a list or vector into a tibble with the names = names of the list and the values = the contents of the list 
+
+```{r}
+
+model_05_rand_forest_ranger$fit %>% 
+    ranger::importance() %>%
+    enframe() %>%
+    arrange(desc(value)) %>%
+    mutate(name = as_factor(name) %>% fct_rev()) %>%
+    
+    ggplot(aes(value, name)) +
+    geom_point(size = 2) +
+    labs(title = "ranger: Variable Importance",
+         subtitle = "Model 05: Ranger Random Forest Model") +
+    theme_tq()
+    
+```
+
+
+# 4.2.3 Model randomForest ----
+```{r}
+
+?rand_forest()
+?randomForest::randomForest
+
+```
+
+# *** FIX 3 *** ----
+# - Encodings have changed for randomForest. Must use factors for character data
+
+# - Error: New factor levels not present in the training data
+
+```{r}
+
+set.seed(38)
+model_06_rand_forest_randomForest <- rand_forest("regression") %>%
+    set_engine("randomForest") %>%
+    fit(price ~ ., data = train_tbl %>% select(-id, -model, -model_tier))
+
+model_06_rand_forest_randomForest %>% calc_metrics(test_tbl)
+
+```
+
+# Solution: 
+
+```{r}
+
+set.seed(1234)
+model_06_rand_forest_randomForest <- rand_forest("regression") %>%
+    set_engine("randomForest") %>%
+    fit(price ~ ., 
+        data = train_tbl %>% 
+            select(-id, -model, -model_tier) %>%
+            mutate_if(is.character, factor) # <- This internally tells randomForest to convert characters to factors
+        )
+
+model_06_rand_forest_randomForest %>% calc_metrics(test_tbl)
+```
+
+
+# *** END FIX 3 *** ----
+
+
+# 4.2.4 randomForest: Feature Importance ----
+
+as_tibble(rownames = "name")
+
+```{r}
+
+model_06_rand_forest_randomForest$fit %>%
+    randomForest::importance() %>%
+    as_tibble(rownames = "name") %>%
+    arrange(desc(IncNodePurity)) %>%
+    mutate(name = as_factor(name) %>% fct_rev()) %>%
+    
+    ggplot(aes(IncNodePurity, name)) +
+    geom_point() +
+    labs(
+        title = "randomForest: Variable Importance",
+        subtitle = "Model 06: randomForest Model"
+    ) +
+    theme_tq()
+```
+
+
+> ProTips: Always make your researh reproducible. This makes it easier for others to heck your work, getting the same result as you. (model robustness)
+
+# 4.3 XGBOOST ----
+
+# 4.3.1 Model ----
+
+```{r}
+
+?boost_tree
+?xgboost::xgboost
+
+set.seed(1234)
+model_07_boost_tree_xgboost <- boost_tree(
+    mode = "regression", 
+    mtry = 30,
+    learn_rate = 0.25,
+    tree_depth = 7
+    ) %>%
+    set_engine("xgboost") %>%
+    fit(price ~ ., data = train_tbl %>% select(-id, -model, -model_tier))
+
+model_07_boost_tree_xgboost %>% calc_metrics(test_tbl)
+```
+
+
+# 4.3.2 Feature Importance ----
+
+```{r}
+
+model_07_boost_tree_xgboost$fit %>%
+    xgboost::xgb.importance(model = .) %>%
+    as_tibble() %>%
+    arrange(desc(Gain)) %>%
+    mutate(Feature = as_factor(Feature) %>% fct_rev()) %>%
+    
+    ggplot(aes(Gain, Feature)) +
+    geom_point() +
+    labs(
+        title = "XGBoost: Variable Importance",
+        subtitle = "Model 07: XGBoost Model"
+    )
+
+```
+
+
+# 5.0 TESTING THE ALGORITHMS OUT ----
+
+```{r}
+
+g1 <- bike_features_tbl %>%
+    mutate(category_2 = as_factor(category_2) %>% 
+               fct_reorder(price)) %>%
+    
+    ggplot(aes(category_2, y = price)) +
+    geom_violin() +
+    geom_jitter(width = 0.1, alpha = 0.5, color = "#2c3e50") +
+    coord_flip() +
+    facet_wrap(~ frame_material) +
+    scale_y_continuous(labels = scales::dollar_format()) +
+    theme_tq() +
+    labs(
+        title = "Unit Price for Each Model",
+        y = "", x = "Category 2"
+    )
+```
+
+
+# 5.1 NEW JEKYLL MODEL ----
+
+```{r}
+
+new_over_mountain_jekyll <- tibble(
+    model = "Jekyll Al 1",
+    frame_material = as.factor("Aluminum"),
+    category_2 = as.factor("Over Mountain"),
+    model_base = as.factor("Jekyll"),
+    model_tier = as.factor("Aluminum 1"),
+    black      = 0,
+    hi_mod     = 0,
+    team       = 0,
+    red        = 0,
+    ultegra    = 0,
+    dura_ace   = 0,
+    disc       = 0
+) 
+
+new_over_mountain_jekyll
+
+```
+
+
+# Linear Methods ----
+
+```{r}
+
+predict(model_03_linear_glmnet, new_data = new_over_mountain_jekyll)
+
+```
+
+
+# Tree-Based Methods ----
+
+```{r}
+
+predict(model_07_boost_tree_xgboost, new_data = new_over_mountain_jekyll)
+
+```
+
+
+# Iteration
+```{r}
+
+models_tbl <- tibble(
+    model_id = str_c("Model 0", 1:7),
+    model = list(
+        model_01_linear_lm_simple,
+        model_02_linear_lm_complex,
+        model_03_linear_glmnet,
+        model_04_tree_decision_tree,
+        model_05_rand_forest_ranger,
+        model_06_rand_forest_randomForest,
+        model_07_boost_tree_xgboost
+    )
+)
+
+models_tbl
+```
+
+
+# Add Predictions
+
+```{r}
+
+predictions_new_over_mountain_tbl <- models_tbl %>%
+    mutate(predictions = map(model, predict, new_data = new_over_mountain_jekyll)) %>%
+    unnest(predictions) %>%
+    mutate(category_2 = "Over Mountain") %>%
+    left_join(new_over_mountain_jekyll, by = "category_2")
+    
+predictions_new_over_mountain_tbl
+
+```
+
+
+# Update plot
+
+```{r}
+
+
+g2 <- g1 +
+    geom_point(aes(y = .pred), color = "red", alpha = 0.5,
+               data = predictions_new_over_mountain_tbl) +
+    ggrepel::geom_text_repel(aes(label = model_id, y = .pred),
+                             size = 3,
+                             data = predictions_new_over_mountain_tbl)
+
+```
+
+# 5.2 NEW TRIATHALON MODEL ----
+
+```{r}
+
+new_triathalon_slice_tbl <- tibble(
+    model = "Slice Al 1",
+    frame_material = as.factor("Aluminum"),
+    category_2 = as.factor("Triathalon"),
+    model_base = as.factor("Slice"),
+    model_tier = as.factor("Ultegra"),
+    black      = 0,
+    hi_mod     = 0,
+    team       = 0,
+    red        = 0,
+    ultegra    = 0,
+    dura_ace   = 0,
+    disc       = 0
+) 
+```
+
+
+# Linear Methods ----
+predict(model_03_linear_glmnet, new_data = new_triathalon_slice_tbl)
+
+# Tree-Based Methods ----
+predict(model_07_boost_tree_xgboost, new_data = new_triathalon_slice_tbl)
+
+# Iteration
+predictions_new_triathalon_tbl <- models_tbl %>%
+    mutate(predictions = map(model, predict, new_data = new_triathalon_slice_tbl)) %>%
+    unnest(predictions) %>%
+    mutate(category_2 = "Triathalon", frame_material = "Aluminum")
+
+
+predictions_new_triathalon_tbl
+
+# Update Plot
+g2 +
+    geom_point(aes(y = .pred), color = "red", alpha = 0.5, 
+               data = predictions_new_triathalon_tbl) +
+    ggrepel::geom_text_repel(aes(y = .pred, label = model_id), 
+                             size = 3,
+                             data = predictions_new_triathalon_tbl)
+
+# 6.0 ADDITIONAL ADVANCED CONCEPTS ----
+
+# - CLASSIFICATION - Binary & Multi-Class
+# - ADVANCED ALGORITHMS
+#   - SVMs - svm_poly() and svm_rbf() - Must be normalized
+#   - Neural Networks - keras - Must be normalized
+#   - Stacking Models 
+# - PREPROCESSING - recipes 
+# - HYPERPARAMETER TUNING - purrr
+# - SAMPLING & CROSS VALIDATION - rsample 
+# - AUTOMATIC MACHINE LEARNING - H2O
+
+
+
+# 7.0 BONUS - PREPROCESSING & SVM-Regression ----
+
+library(recipes)
+
+?recipe
+?step_dummy
+?prep
+?bake
+
+train_tbl
+
+recipe_obj <- recipe(price ~ ., data = train_tbl) %>%
+    step_rm(id, model, model_tier) %>%
+    step_dummy(all_nominal(), one_hot = TRUE) %>%
+    
+    # *** FIX 4 *** ----
+    # Error: Assigned data `log(new_data[[col_names[i]]] + object$offset, base = object$base)` must be compatible with existing data.
+    # - Recipe interface has changed when applying recipes to the target
+    # - Need to use skip = TRUE
+
+    # step_log(price) %>%
+    # step_center(price) %>%
+    # step_scale(price) %>%
+    
+    step_log(price, skip = TRUE) %>%
+    step_center(price, skip = TRUE) %>%
+    step_scale(price, skip = TRUE) %>%
+    
+    # *** END FIX 4 *** ----
+    
+    prep()
+
+bake(recipe_obj, train_tbl) %>% glimpse()
+
+# *** FIX *** ----
+# - Recipe interface has changed when applying recipes to the target (when skip = TRUE)
+# - Need to juice() instead of bake()
+
+# train_transformed_tbl <- bake(recipe_obj, train_tbl)
+train_transformed_tbl <- juice(recipe_obj)
+
+# *** END FIX *** ----
+
+test_transformed_tbl  <- bake(recipe_obj, test_tbl)
+
+tidy(recipe_obj)
+scale  <- tidy(recipe_obj, 5)
+center <- tidy(recipe_obj, 4)
+
+
+# SVM: Radial Basis
+?svm_rbf
+?kernlab::ksvm
+
+train_transformed_tbl %>% glimpse()
+
+model_08_svm_rbf <- svm_rbf("regression", cost = 10, rbf_sigma = 0.1, margin = 0.25) %>%
+    set_engine("kernlab", scaled = FALSE) %>%
+    fit(price ~ ., data = train_transformed_tbl)
+
+model_08_svm_rbf %>%
+    predict(new_data = test_transformed_tbl) %>%
+    mutate(
+        .pred = .pred * scale$value,
+        .pred = .pred + center$value,
+        .pred = exp(.pred)
+        ) %>%
+    bind_cols(test_tbl %>% select(price)) %>%
+    yardstick::metrics(truth = price, estimate = .pred)
+
+# Predictions
+
+bake(recipe_obj, new_data = new_over_mountain_jekyll) %>%
+    predict(object = model_08_svm_rbf, new_data = .) %>%
+    mutate(
+        .pred = .pred * scale$value,
+        .pred = .pred + center$value,
+        .pred = exp(.pred)
+    )
+
+predictions_new_over_mountain_tbl
+
+g2
+
+# g3
+
+bake(recipe_obj, new_data = new_triathalon_slice_tbl) %>%
+    predict(object = model_08_svm_rbf, new_data = .) %>%
+    mutate(
+        .pred = .pred * scale$value,
+        .pred = .pred + center$value,
+        .pred = exp(.pred)
+    )
+
+predictions_new_triathalon_tbl
+
+bike_features_tbl %>% 
+    filter(category_2 == "Endurance Road") %>%
+    arrange(price)
+
+
+# 8.0 SAVING & LOADING MODELS ----
+
+fs::dir_create("00_models")
+
+models_tbl <- list(
+    "MODEL_01__LM_SIMPLE"  = model_01_linear_lm_simple,
+    "MODEL_02__LM_COMPLEX" = model_02_linear_lm_complex,
+    "MODEL_03__GLMNET"     = model_03_linear_glmnet,
+    "MODEL_04__DECISION_TREE"   = model_04_tree_decision_tree,
+    "MODEL_05__RF_RANGER"       = model_05_rand_forest_ranger,
+    "MODEL_06__RF_RANDOMFOREST" = model_06_rand_forest_randomForest,
+    "MODEL_07__XGBOOST" = model_07_boost_tree_xgboost,
+    "MODEL_08__SVM"     = model_08_svm_rbf
+) %>%
+    enframe(name = "model_id", value = "model")
+
+models_tbl
+
+models_tbl %>% write_rds("00_models/parsnip_models_tbl.rds")
+
+recipes_tbl <- list(
+    "RECIPE_01" = recipe_obj
+) %>%
+    enframe(name = "recipe_id", value = "recipe")
+
+recipes_tbl %>% write_rds("00_models/recipes_tbl.rds")
+
+calc_metrics %>% write_rds("00_scripts/calc_metrics.rds")
+
+# Reading
+
+models_tbl <- read_rds("00_models/parsnip_models_tbl.rds")
+
+recipes_tbl <- read_rds("00_models/recipes_tbl.rds")
+
+calc_metrics <- read_rds("00_scripts/calc_metrics.rds")

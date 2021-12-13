@@ -254,6 +254,7 @@ umap_result_tbl %>%
     ggrepel::geom_label_repel(aes(label = bikeshop_name), size = 3)
     
 ```
+
 ```{r}
 umap_result_tbl
 

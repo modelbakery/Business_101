@@ -3,14 +3,14 @@ title: "Week 6 - Challenge - Company Segmentation"
 author: "Business Science"
 date: "2/19/2019"
 output:
+  pdf_document:
+    toc: yes
   html_document:
     toc: yes
     theme: flatly
     highlight: tango
     code_folding: hide
     df_print: paged
-  pdf_document:
-    toc: yes
 ---
 
 ```{r setup, include=FALSE}
@@ -126,7 +126,7 @@ We can read in the stock prices. The data is 1.2M observations. The most importa
 ```{r}
 # STOCK PRICES
 sp_500_prices_tbl <- read_rds("challenge/week_6_data/sp_500_prices_tbl.rds")
-sp_500_prices_tbl %>% View()
+sp_500_prices_tbl 
 ```
 
 The second data frame contains information about the stocks the most important of which are:

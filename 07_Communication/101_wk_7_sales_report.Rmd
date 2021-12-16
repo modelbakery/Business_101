@@ -1,0 +1,144 @@
+---
+title: "Sales Report"
+author: "Seung Hyun Sung"
+date: "16/12/2021"
+output:
+  html_document:
+    code_folding: none
+    df_print: paged
+    highlight: tango
+    number_sections: yes
+    theme: flatly
+    toc: yes
+    toc_depth: 2
+  pdf_document:
+    toc: yes
+    toc_depth: '2'
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+    echo = FALSE,
+    message = FALSE,
+    warning = FALSE,
+    out.width = "100%",
+    out.height = "500px",
+    fig.pos = "center",
+    dpi = 300)
+
+```
+
+```{r libraries}
+library(tidyverse)
+library(lubridate)
+library(tidyquant)
+library(plotly)
+```
+
+
+> ProTip: When using TOC, make sure to start with H1 headers, whih are used to generate the TOC 
+
+
+```{r}
+source("01_Scripts/plot_sales.R")
+```
+
+```{r}
+bike_orderlines_tbl <- read_rds("00_Data/bike_sales/data_wrangled/bike_orderlines.rds")
+```
+
+
+```{r}
+interactive <- FALSE
+```
+
+
+# Total Sales Charts {.tabset .tabset-fade .tabset-pills}
+
+## Quarterly Sales Trends
+
+```{r}
+plot_total_sales(unit = "quarter", interactive = interactive)
+```
+
+## Monthly Sales Trends
+
+```{r}
+plot_total_sales(unit = "month", interactive = interactive)
+```
+
+
+## Weekly Sales Trends
+
+```{r}
+plot_total_sales(unit = "week", date_format = "%Y-%m-%d", interactive = interactive)
+```
+
+# Category Sales Charts 
+
+## Road {.tabset .tabset-fade}
+
+### Quarterly 
+
+```{r, fig.height=8}
+plot_categories(category_1 = "Road",
+                ncol = 1,
+                unit = "quarter",
+                interactive = interactive)
+```
+
+
+### Monthly 
+
+```{r, fig.height=8}
+plot_categories(category_1 = "Road",
+                ncol = 1,
+                unit = "month",
+                interactive = interactive)
+```
+
+
+### Weekly 
+
+```{r, fig.height=8}
+plot_categories(category_1 = "Road",
+                ncol = 1,
+                unit = "week",
+                interactive = interactive)
+```
+
+
+
+## Mountain {.tabset .tabset-fade}
+
+### Quarterly 
+
+```{r, fig.height=8}
+plot_categories(category_1 = "Mountain",
+                ncol = 1,
+                unit = "quarter",
+                interactive = interactive)
+```
+
+
+### Monthly 
+
+```{r, fig.height=8}
+plot_categories(category_1 = "Mountain",
+                ncol = 1,
+                unit = "month",
+                interactive = interactive)
+```
+
+
+### Weekly 
+
+```{r, fig.height=8}
+plot_categories(category_1 = "Mountain",
+                ncol = 1,
+                unit = "week",
+                interactive = interactive)
+```
+
+
+

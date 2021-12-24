@@ -55,6 +55,10 @@ library(plotly) # NEW PACKAGE
 library(quantmod)
 ```
 
+```{r}
+interactive <- FALSE
+```
+
 
 # Data
 
@@ -126,7 +130,7 @@ We can read in the stock prices. The data is 1.2M observations. The most importa
 ```{r}
 # STOCK PRICES
 sp_500_prices_tbl <- read_rds("challenge/week_6_data/sp_500_prices_tbl.rds")
-sp_500_prices_tbl 
+sp_500_prices_tbl %>% head(10)
 ```
 
 The second data frame contains information about the stocks the most important of which are:
@@ -137,7 +141,7 @@ The second data frame contains information about the stocks the most important o
 ```{r}
 # SECTOR INFORMATION
 sp_500_index_tbl <- read_rds("challenge/week_6_data/sp_500_index_tbl.rds")
-sp_500_index_tbl
+sp_500_index_tbl %>% head(10)
 ```
 
 
@@ -197,7 +201,7 @@ sp_500_daily_returns_tbl <- sp_500_prices_tbl %>%
     select(symbol, date, pct_return) 
 
 # Output: sp_500_daily_returns_tbl
-sp_500_daily_returns_tbl
+sp_500_daily_returns_tbl %>% head(20)
 ```
 
 
@@ -223,7 +227,7 @@ Now that we have the daily returns (percentage change from one day to the next),
 stock_date_matrix_tbl <- sp_500_daily_returns_tbl %>% 
     spread(date, pct_return, fill = 0)
 # Output: stock_date_matrix_tbl
-stock_date_matrix_tbl
+stock_date_matrix_tbl %>% head(20)
 ```
 
 
@@ -360,6 +364,8 @@ umap_results_tbl <- umap_results$layout %>%
     setNames(c("x", "y")) %>% 
     cbind(stock_date_matrix_tbl %>% select(symbol))
 # Output: umap_results_tbl
+
+umap_results_tbl %>% head(20)
 ```
 
 Finally, let's make a quick visualization of the `umap_results_tbl`.
@@ -425,6 +431,7 @@ umap_kmeans_results_tbl <- k_means_obj %>% broom::augment(stock_date_matrix_tbl)
     left_join(sp_500_index_tbl %>% select(symbol, company, sector), by = "symbol")
 
 # Output: umap_kmeans_results_tbl 
+umap_kmeans_results_tbl %>% head(20)
 ```
 
 Plot the K-Means and UMAP results.
@@ -478,7 +485,7 @@ get_kmeans <- function(k = 3) {
     return(umap_kmeans_results_tbl)
 }
 
-plot_cluster <- function(k = 3) {
+plot_cluster <- function(k = 3, interactive = TRUE) {
     
     g <- get_kmeans(k) %>%
         
@@ -491,8 +498,11 @@ plot_cluster <- function(k = 3) {
         theme_tq() +
         scale_color_tq()
     
-    g %>%
-        ggplotly(tooltip = "text")
+        if (interactive) {
+        return(ggplotly(g, tooltip = "text"))
+    } else {
+        return(g)
+    }
     
 }
 ```
@@ -500,7 +510,7 @@ plot_cluster <- function(k = 3) {
 We can plot the clusters interactively. 
 
 ```{r}
-plot_cluster(k = 10)
+plot_cluster(k = 10, interactive = interactive)
 ```
 
 

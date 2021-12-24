@@ -4,7 +4,7 @@ author: "Seung Hyun Sung"
 date: "16/12/2021"
 output:
   html_document:
-    code_folding: none
+    code_folding: show
     df_print: paged
     highlight: tango
     number_sections: yes
@@ -18,7 +18,7 @@ output:
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(
-    echo = FALSE,
+    echo = TRUE,
     message = FALSE,
     warning = FALSE,
     out.width = "100%",
